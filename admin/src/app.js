@@ -3,6 +3,7 @@ const bodyParser = require("body-parser");
 const config = require("config");
 const request = require("request");
 const axios = require("axios");
+const utils = require("./utils");
 var fs = require("fs");
 
 const app = express();
@@ -10,6 +11,7 @@ const app = express();
 app.use(bodyParser.json({ limit: "10mb" }));
 
 app.get("/investments/:id", (req, res) => {
+  console.log(config.investmentsServiceUrl);
   const { id } = req.params;
   request.get(
     `${config.investmentsServiceUrl}/investments/${id}`,
@@ -26,48 +28,18 @@ app.get("/investments/:id", (req, res) => {
 
 app.post("/investments/export/csv", async (req, res) => {
   try {
-    const resInvestments = await axios.get(
-      `${config.investmentsServiceUrl}/investments`
+    const investments = await utils.getInvestments();
+    const companies = await utils.getCompanies();
+    const investmentsCsv = await utils.getInvestmentsInCsv(
+      investments,
+      companies
     );
-    let investments = [];
-    for (const x of resInvestments.data) {
-      let resCompany = await axios.get(
-        `${config.companiesServiceUrl}/companies/${x.userId}`
-      );
-      let userId = x.userId;
-      let hold = x.holdings.find((h) => {
-        return h.id == userId;
-      });
-
-      let valueHold = 0;
-      if (hold) valueHold = hold.investmentPercentage * x.investmentTotal;
-
-      let nameCompany = resCompany.data.name;
-      let line =
-        "|" +
-        x.userId +
-        "|" +
-        x.firstName +
-        "|" +
-        x.lastName +
-        "|" +
-        x.date +
-        "|" +
-        nameCompany +
-        "|" +
-        valueHold +
-        "|";
-      investments.push(line);
-    }
-    fs.writeFileSync("out.csv", investments.join("\n"));
+    fs.writeFileSync("out.csv", investmentsCsv.join("\n"));
 
     let fileCsv = fs.readFileSync("out.csv", "utf-8");
 
     //send csv file
-    await axios.post(`${config.investmentsServiceUrl}/investments/export`, {
-      file: fileCsv,
-    });
-
+    await utils.postInvestmentsCsv(fileCsv);
     res.sendStatus(200);
   } catch (e) {
     console.error(e);
